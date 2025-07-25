@@ -1,6 +1,4 @@
- Python
- Pandas, NumPy
- Scikit-learn, NLTK
- TfidfVectorizer
- Logistic Regression
- Pickle 
+streamlit
+scikit-learn
+pandas
+numpy
