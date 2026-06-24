@@ -1,0 +1,21 @@
+# Model files (too large for GitHub - host on Google Drive)
+sentiment_model.pkl
+trained_model.sav
+vectorizer.pkl
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
