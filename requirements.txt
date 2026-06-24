@@ -1,4 +1,6 @@
+gdown
 streamlit
+nltk
 scikit-learn
 pandas
-numpy 
+numpy
