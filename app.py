@@ -85,7 +85,7 @@ if 'history' not in st.session_state:
 with st.sidebar:
     st.title("🧠 Senlysis")
     st.markdown("**Sentiment Analysis Tool**")
-    st.markdown("Trained on 1M+ Google Play reviews.")
+    st.markdown("Trained on 3M+ Google Play reviews.")
     st.divider()
     st.markdown("**Model Details**")
     st.markdown("- Algorithm: Logistic Regression (C=10)")
