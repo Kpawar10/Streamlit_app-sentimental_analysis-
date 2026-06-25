@@ -38,7 +38,7 @@ def load_model():
     for filename, file_id in files.items():
         if not os.path.exists(filename):
             url = f'https://drive.google.com/uc?export=download&id={file_id}'
-            gdown.download(url, filename, quiet=False, fuzzy=True)
+            gdown.download(url, filename, quiet=False)
 
     model      = pickle.load(open('sentiment_model.pkl', 'rb'))
     vectorizer = pickle.load(open('vectorizer.pkl', 'rb'))
