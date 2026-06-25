@@ -3,10 +3,10 @@ import pickle
 import numpy as np
 import pandas as pd
 import re
-from nltk.corpus import stopwords
-from nltk.stem.porter import PorterStemmer
+import gdown
+import os
 import nltk
-import io
+from nltk.stem import WordNetLemmatizer
 
 # --- Page config ---
 st.set_page_config(
@@ -15,47 +15,49 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- Download NLTK data ---
+# --- NLTK ---
 @st.cache_resource
 def load_nltk():
     nltk.download('stopwords', quiet=True)
-    return stopwords.words('english')
+    nltk.download('wordnet', quiet=True)
+    nltk.download('omw-1.4', quiet=True)
+    from nltk.corpus import stopwords
+    return set(stopwords.words('english')) - {'not', 'no', 'nor', 'never', 'nothing'}
 
 stop_words = load_nltk()
-port_stem = PorterStemmer()
+lemmatizer = WordNetLemmatizer()
 
-# --- Load model and vectorizer ---
-import gdown
-import os
-
+# --- Load model from Google Drive ---
 @st.cache_resource
 def load_model():
-    if not os.path.exists('sentiment_model.pkl'):
-        gdown.download(
-            'https://drive.google.com/file/d/1zeBHOK4Pow7jJrnkBMtuONs0usDICjKI/view?usp=drive_link',
-            'sentiment_model.pkl', quiet=False
-        )
-    if not os.path.exists('vectorizer.pkl'):
-        gdown.download(
-            'https://drive.google.com/file/d/1V0fq8wvqrmq28BGx_JslqrPmoFtZgDga/view?usp=drive_link',
-            'vectorizer.pkl', quiet=False
-        )
-    if not os.path.exists('label_encoder.pkl'):
-        gdown.download(
-            'https://drive.google.com/file/d/1RMuk6syQxXrBb6Pq_pvrGLsTueeho0tZ/view?usp=drive_link',
-            'label_encoder.pkl', quiet=False
-        )
-    model = pickle.load(open('sentiment_model.pkl', 'rb'))
+    files = {
+        'sentiment_model.pkl': '1zeBHOK4Pow7jJrnkBMtuONs0usDICjKI',
+        'vectorizer.pkl':      '1V0fq8wvqrmq28BGx_JslqrPmoFtZgDga',
+        'label_encoder.pkl':   '1RMuk6syQxXrBb6Pq_pvrGLsTueeho0tZ',
+    }
+    for filename, file_id in files.items():
+        if not os.path.exists(filename):
+            url = f'https://drive.google.com/uc?export=download&id={file_id}'
+            gdown.download(url, filename, quiet=False, fuzzy=True)
+
+    model      = pickle.load(open('sentiment_model.pkl', 'rb'))
     vectorizer = pickle.load(open('vectorizer.pkl', 'rb'))
-    le = pickle.load(open('label_encoder.pkl', 'rb'))
+    le         = pickle.load(open('label_encoder.pkl', 'rb'))
     return model, vectorizer, le
 
-# --- Preprocessing ---
+# Show spinner while downloading models on first load
+with st.spinner("Loading model (first load downloads from Google Drive)..."):
+    model, vectorizer, le = load_model()
+
+# --- Preprocessing (must match train.py exactly) ---
 def preprocess(text):
+    if not isinstance(text, str):
+        return ''
     text = re.sub('[^a-zA-Z]', ' ', text)
-    text = text.lower().split()
-    text = [port_stem.stem(w) for w in text if w not in stop_words]
-    return ' '.join(text)
+    text = text.lower()
+    words = [lemmatizer.lemmatize(w) for w in text.split()
+             if w not in stop_words and len(w) > 1]
+    return ' '.join(words)
 
 # --- Predict ---
 def predict_sentiment(text):
@@ -63,20 +65,19 @@ def predict_sentiment(text):
     vec = vectorizer.transform([cleaned])
     pred = model.predict(vec)[0]
     proba = model.predict_proba(vec)[0]
-    label_map = {0: 'Negative', 1: 'Neutral', 2: 'Positive'}
-    label = label_map[pred]
+    label = le.inverse_transform([pred])[0].capitalize()
     confidence = round(max(proba) * 100, 2)
     return label, confidence, proba
 
-# --- Emoji & color map ---
+# --- Style map ---
 def get_style(label):
     return {
-        'Positive': ('😊', '🟢', '#28a745'),
-        'Neutral':  ('😐', '🟡', '#ffc107'),
-        'Negative': ('😠', '🔴', '#dc3545'),
-    }[label]
+        'Positive': ('😊', '#28a745'),
+        'Neutral':  ('😐', '#ffc107'),
+        'Negative': ('😠', '#dc3545'),
+    }.get(label, ('❓', '#888888'))
 
-# --- Session state for history ---
+# --- Session history ---
 if 'history' not in st.session_state:
     st.session_state.history = []
 
@@ -84,13 +85,14 @@ if 'history' not in st.session_state:
 with st.sidebar:
     st.title("🧠 Senlysis")
     st.markdown("**Sentiment Analysis Tool**")
-    st.markdown("Trained on 3 million Instagram Google Play reviews.")
+    st.markdown("Trained on 1M+ Google Play reviews.")
     st.divider()
     st.markdown("**Model Details**")
-    st.markdown("- Algorithm: Logistic Regression")
-    st.markdown("- Features: TF-IDF Bigrams (20K)")
+    st.markdown("- Algorithm: Logistic Regression (C=10)")
+    st.markdown("- Features: TF-IDF Bigrams (50K)")
     st.markdown("- Classes: Positive / Neutral / Negative")
-    st.markdown("- Test Accuracy: ~60%")
+    st.markdown("- Test Accuracy: **64.4%**")
+    st.markdown("- Macro F1: **0.64**")
     st.divider()
     st.markdown("**Dataset**")
     st.markdown("[Kaggle: 3M Instagram Reviews](https://www.kaggle.com/datasets/bwandowando/3-million-instagram-google-store-reviews)")
@@ -123,7 +125,7 @@ with tab1:
             st.warning("Please enter some text.")
         else:
             label, confidence, proba = predict_sentiment(user_input)
-            emoji, dot, color = get_style(label)
+            emoji, color = get_style(label)
 
             st.divider()
             col_a, col_b = st.columns(2)
@@ -131,38 +133,34 @@ with tab1:
             with col_a:
                 st.markdown(f"### Result: {emoji} **{label}**")
                 st.markdown(f"Confidence: **{confidence}%**")
-
-                # Confidence bar
                 st.progress(int(confidence))
 
             with col_b:
                 st.markdown("**Class Probabilities**")
+                labels = le.classes_
                 prob_df = pd.DataFrame({
-                    'Sentiment': ['Negative', 'Neutral', 'Positive'],
+                    'Sentiment': [l.capitalize() for l in labels],
                     'Probability': [round(p * 100, 1) for p in proba]
                 })
                 st.bar_chart(prob_df.set_index('Sentiment'))
 
-            # Add to history
             st.session_state.history.append({
                 'Text': user_input[:80] + ('...' if len(user_input) > 80 else ''),
                 'Sentiment': label,
                 'Confidence': f"{confidence}%"
             })
 
-    # Analysis History
     if st.session_state.history:
         st.divider()
         st.markdown("#### 📋 Analysis History (this session)")
-        hist_df = pd.DataFrame(st.session_state.history)
-        st.dataframe(hist_df, use_container_width=True)
+        st.dataframe(pd.DataFrame(st.session_state.history), use_container_width=True)
 
 # =====================
 # TAB 2: Bulk CSV
 # =====================
 with tab2:
     st.markdown("Upload a CSV with a column of text/reviews to analyze all rows at once.")
-    st.markdown("**Required:** CSV must have a column named `text` or `review`.")
+    st.markdown("**Required:** CSV must have a column named `text`, `review`, or `review_text`.")
 
     uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
 
@@ -171,7 +169,6 @@ with tab2:
         st.markdown(f"Loaded **{len(df)} rows**. Preview:")
         st.dataframe(df.head(3), use_container_width=True)
 
-        # Auto-detect text column
         text_col = None
         for col in df.columns:
             if col.lower() in ['text', 'review', 'review_text', 'comment', 'content']:
@@ -188,7 +185,6 @@ with tab2:
                 results = []
                 progress = st.progress(0)
                 total = len(df)
-
                 for i, row in enumerate(df[text_col].fillna('').astype(str)):
                     label, confidence, _ = predict_sentiment(row)
                     results.append({'sentiment': label, 'confidence': confidence})
@@ -198,22 +194,17 @@ with tab2:
                 df['confidence_%'] = [r['confidence'] for r in results]
 
             st.success("Done!")
-
-            # Summary
             st.markdown("#### Summary")
             col1, col2, col3 = st.columns(3)
             counts = df['sentiment'].value_counts()
             col1.metric("😊 Positive", counts.get('Positive', 0))
-            col2.metric("😐 Neutral", counts.get('Neutral', 0))
+            col2.metric("😐 Neutral",  counts.get('Neutral', 0))
             col3.metric("😠 Negative", counts.get('Negative', 0))
-
             st.bar_chart(counts)
 
-            # Full results
             st.markdown("#### Results")
             st.dataframe(df, use_container_width=True)
 
-            # Download
             csv_out = df.to_csv(index=False).encode('utf-8')
             st.download_button(
                 "⬇️ Download Results as CSV",
